@@ -100,7 +100,7 @@ const HTML = `<!DOCTYPE html>
 <main>
   <section class="hero">
     <p class="hero-eyebrow">Powered by Claude + live web search</p>
-    <h1>Your salary isn't the same<br/><em>everywhere in the world</em></h1>
+    <h1>Your salary is not the same<br/><em>everywhere in the world</em></h1>
     <p>$100k in San Francisco buys very different things than $100k in Hyderabad. Find the real equivalent salary adjusted for purchasing power using live data.</p>
   </section>
   <div class="form-card">
@@ -261,7 +261,7 @@ function renderResult(r) {
   document.getElementById('th-target').textContent = r.target.location.split(',')[0];
   const tbody = document.getElementById('breakdown-body');
   tbody.innerHTML = '';
-  const icons = { rent: 'Rent', groceries: 'Groceries', transport: 'Transport', healthcare: 'Healthcare' };
+  const labels = { rent: 'Rent', groceries: 'Groceries', transport: 'Transport', healthcare: 'Healthcare' };
   if (r.breakdown) {
     Object.entries(r.breakdown).forEach(function(entry) {
       const key = entry[0];
@@ -269,7 +269,7 @@ function renderResult(r) {
       const p = parseInt(val.savings_pct) || 0;
       const neg = p < 0;
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + (icons[key] || key) + '</td><td>' + val.origin + '</td><td>' + val.target + '</td><td class="savings-pct' + (neg ? ' neg' : '') + '">' + Math.abs(p) + '% ' + (neg ? 'more' : 'less') + '</td>';
+      tr.innerHTML = '<td>' + (labels[key] || key) + '</td><td>' + val.origin + '</td><td>' + val.target + '</td><td class="savings-pct' + (neg ? ' neg' : '') + '">' + Math.abs(p) + '% ' + (neg ? 'more' : 'less') + '</td>';
       tbody.appendChild(tr);
     });
   }
@@ -306,11 +306,11 @@ app.post("/api/compare", async (req, res) => {
     return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
   }
 
-  const prompt = `You are a cost-of-living expert. Use web search to find the LATEST data.
+  const prompt = `You are a cost-of-living expert with access to web search.
 A person earns ${Number(salary).toLocaleString()} ${currency}/year in ${from}. What salary in ${to} gives equivalent purchasing power?
-Search: cost of living index ${from} vs ${to} Numbeo 2025.
-Reply ONLY with raw JSON (no markdown, no backticks):
-{"origin":{"location":"${from}","salary":${salary},"currency":"${currency}","col_index_label":"Cost of Living Index: XX"},"target":{"location":"${to}","local_currency_code":"XXX","local_currency_symbol":"X","equivalent_local":0,"equivalent_usd":0,"col_index_label":"Cost of Living Index: XX"},"ratio":1.0,"ratio_label":"Xx cheaper/expensive","verdict":"2-3 sentence explanation","breakdown":{"rent":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"groceries":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"transport":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"healthcare":{"origin":"$X/mo","target":"X/mo","savings_pct":0}},"caveats":["one caveat"],"data_source":"Numbeo 2025","data_freshness":"May 2025"}`;
+Search for: cost of living comparison ${from} vs ${to} 2025 Numbeo
+Reply ONLY with raw JSON, no markdown, no backticks, no explanation:
+{"origin":{"location":"${from}","salary":${salary},"currency":"${currency}","col_index_label":"Cost of Living Index: XX"},"target":{"location":"${to}","local_currency_code":"XXX","local_currency_symbol":"X","equivalent_local":0,"equivalent_usd":0,"col_index_label":"Cost of Living Index: XX"},"ratio":1.0,"ratio_label":"Xx cheaper","verdict":"2-3 sentence explanation","breakdown":{"rent":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"groceries":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"transport":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"healthcare":{"origin":"$X/mo","target":"X/mo","savings_pct":0}},"caveats":["one caveat"],"data_source":"Numbeo 2025","data_freshness":"May 2025"}`;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -318,42 +318,73 @@ Reply ONLY with raw JSON (no markdown, no backticks):
   res.write(`data: ${JSON.stringify({ type: "status", message: "Searching live cost of living data..." })}\n\n`);
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1500,
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{ role: "user", content: prompt }]
-      }),
-    });
+    const messages = [{ role: "user", content: prompt }];
+    let finalText = "";
+    let searchCount = 0;
 
-    if (!response.ok) {
-      const t = await response.text();
-      res.write(`data: ${JSON.stringify({ type: "error", message: "API error " + response.status + ": " + t })}\n\n`);
-      return res.end();
+    while (true) {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "web-search-1"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: messages
+        }),
+      });
+
+      if (!response.ok) {
+        const t = await response.text();
+        res.write(`data: ${JSON.stringify({ type: "error", message: "API error " + response.status + ": " + t })}\n\n`);
+        return res.end();
+      }
+
+      const data = await response.json();
+      const content = data.content || [];
+
+      // Add assistant response to message history
+      messages.push({ role: "assistant", content: content });
+
+      // Collect text blocks
+      content.filter(b => b.type === "text").forEach(b => { finalText += b.text; });
+
+      // Count tool uses
+      const toolUses = content.filter(b => b.type === "tool_use");
+      searchCount += toolUses.length;
+      if (searchCount > 0) {
+        res.write(`data: ${JSON.stringify({ type: "status", message: "Searched " + searchCount + " source(s). Calculating..." })}\n\n`);
+      }
+
+      // If done, break
+      if (data.stop_reason === "end_turn") break;
+
+      // If there are tool results to send back
+      if (toolUses.length > 0) {
+        const toolResults = toolUses.map(tu => ({
+          type: "tool_result",
+          tool_use_id: tu.id,
+          content: tu.output || ""
+        }));
+        messages.push({ role: "user", content: toolResults });
+      } else {
+        break;
+      }
     }
 
-    const data = await response.json();
-    const searches = (data.content || []).filter(function(b) { return b.type === "tool_use"; }).length;
-    if (searches > 0) {
-      res.write(`data: ${JSON.stringify({ type: "status", message: "Searched " + searches + " source(s). Calculating..." })}\n\n`);
-    }
-
-    const text = (data.content || []).filter(function(b) { return b.type === "text"; }).map(function(b) { return b.text; }).join("");
-    const js = text.indexOf("{");
-    const je = text.lastIndexOf("}");
+    const js = finalText.indexOf("{");
+    const je = finalText.lastIndexOf("}");
     if (js === -1) {
-      res.write(`data: ${JSON.stringify({ type: "error", message: "No JSON in response: " + text.slice(0, 300) })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: "error", message: "No JSON in response: " + finalText.slice(0, 300) })}\n\n`);
       return res.end();
     }
 
-    const result = JSON.parse(text.slice(js, je + 1));
+    const result = JSON.parse(finalText.slice(js, je + 1));
     res.write(`data: ${JSON.stringify({ type: "result", data: result })}\n\n`);
     res.end();
   } catch (err) {
