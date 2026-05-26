@@ -299,7 +299,17 @@ Calculate what equivalent salary they would need in ${to} to maintain the same p
 
 Use your knowledge of cost of living indices (Numbeo, World Bank PPP), typical monthly costs for rent, groceries, transport, healthcare in both cities, and currency exchange rates.
 
-Return ONLY a valid JSON object. No markdown, no backticks, no explanation. Raw JSON only:
+Return ONLY a valid JSON object.
+
+Do not explain.
+Do not speak conversationally.
+Do not say "Let's".
+Do not use markdown.
+Do not use bullet points.
+Keep explanations short.
+
+Return ONLY raw JSON.
+
 {
   "origin": {
     "location": "${from}",
@@ -337,7 +347,7 @@ Return ONLY a valid JSON object. No markdown, no backticks, no explanation. Raw 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 1500, responseMimeType: "application/json" }
+          generationConfig: { temperature: 0.3, maxOutputTokens: 3000, responseMimeType: "application/json" }
         })
       }
     );
@@ -348,16 +358,50 @@ Return ONLY a valid JSON object. No markdown, no backticks, no explanation. Raw 
     }
 
     const data = await response.json();
-    const text = data.candidates[0].content.parts[0].text;
 
-    const js = text.indexOf("{");
-    const je = text.lastIndexOf("}");
-    if (js === -1) {
-      return res.status(500).json({ error: "Could not parse response: " + text.slice(0, 200) });
-    }
+const text =
+  data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    const result = JSON.parse(text.slice(js, je + 1));
-    return res.json(result);
+if (!text) {
+  return res.status(500).json({
+    error: "Empty Gemini response",
+    raw: data
+  });
+}
+
+console.log("RAW:", text);
+
+let cleaned = text.trim();
+
+// remove markdown fences
+cleaned = cleaned.replace(/```json/g, "");
+cleaned = cleaned.replace(/```/g, "");
+
+// find json bounds
+const start = cleaned.indexOf("{");
+const end = cleaned.lastIndexOf("}");
+
+if (start === -1 || end === -1) {
+  return res.status(500).json({
+    error: "No JSON object found",
+    raw: cleaned
+  });
+}
+
+cleaned = cleaned.slice(start, end + 1);
+
+try {
+  const result = JSON.parse(cleaned);
+  return res.json(result);
+} catch (err) {
+  console.error(err);
+
+  return res.status(500).json({
+    error: "JSON parse failed",
+    details: err.message,
+    raw: cleaned
+  });
+}
 
   } catch (err) {
     return res.status(500).json({ error: err.message });
