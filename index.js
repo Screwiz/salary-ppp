@@ -337,7 +337,7 @@ Return ONLY a valid JSON object. No markdown, no backticks, no explanation. Raw 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 1500 }
+          generationConfig: { temperature: 0.3, maxOutputTokens: 1500, responseMimeType: "application/json" }
         })
       }
     );
