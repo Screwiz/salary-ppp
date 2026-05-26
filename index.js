@@ -99,7 +99,7 @@ const HTML = `<!DOCTYPE html>
 </nav>
 <main>
   <section class="hero">
-    <p class="hero-eyebrow">Powered by Claude AI</p>
+    <p class="hero-eyebrow">Powered by Google Gemini AI</p>
     <h1>Your salary is not the same<br/><em>everywhere in the world</em></h1>
     <p>$100k in San Francisco buys very different things than $100k in Hyderabad. Find the real equivalent salary adjusted for purchasing power.</p>
   </section>
@@ -187,7 +187,7 @@ const HTML = `<!DOCTYPE html>
     </div>
   </div>
 </main>
-<footer>SalaryPPP · Purchasing power estimates via Claude AI · Not financial advice</footer>
+<footer>SalaryPPP · Purchasing power estimates via Gemini AI · Not financial advice</footer>
 <script>
 function fill(sal, cur, from, to) {
   document.getElementById('salary').value = sal;
@@ -262,7 +262,7 @@ function renderResult(r) {
   document.getElementById('r-verdict').textContent = r.verdict || '';
   const caveats = Array.isArray(r.caveats) ? r.caveats : (r.caveats ? [r.caveats] : []);
   document.getElementById('r-caveat').textContent = 'Note: ' + (caveats[0] || 'Actual purchasing power varies by lifestyle.');
-  document.getElementById('r-source').textContent = r.data_source || 'Based on Numbeo / World Bank PPP data';
+  document.getElementById('r-source').textContent = r.data_source || 'Numbeo / World Bank PPP data';
   document.getElementById('r-freshness').textContent = r.data_freshness || '2024-2025 estimates';
   document.getElementById('result').classList.add('visible');
   document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -287,9 +287,9 @@ app.post("/api/compare", async (req, res) => {
     return res.status(400).json({ error: "Missing fields" });
   }
 
-  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-  if (!ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_API_KEY) {
+    return res.status(500).json({ error: "GEMINI_API_KEY not set" });
   }
 
   const prompt = `You are a cost-of-living and purchasing power parity expert.
@@ -297,13 +297,9 @@ app.post("/api/compare", async (req, res) => {
 A person earns ${Number(salary).toLocaleString()} ${currency} per year in ${from}.
 Calculate what equivalent salary they would need in ${to} to maintain the same purchasing power and lifestyle.
 
-Use your knowledge of:
-- Cost of living indices (Numbeo, World Bank PPP data)
-- Typical monthly costs for rent, groceries, transport, healthcare in both cities
-- Currency exchange rates
-- Local purchasing power
+Use your knowledge of cost of living indices (Numbeo, World Bank PPP), typical monthly costs for rent, groceries, transport, healthcare in both cities, and currency exchange rates.
 
-Return ONLY a valid JSON object, no markdown, no explanation, no backticks. Just raw JSON:
+Return ONLY a valid JSON object. No markdown, no backticks, no explanation. Raw JSON only:
 {
   "origin": {
     "location": "${from}",
@@ -323,38 +319,36 @@ Return ONLY a valid JSON object, no markdown, no explanation, no backticks. Just
   "ratio_label": "[X]x cheaper/more expensive",
   "verdict": "[2-3 sentences explaining the difference in purchasing power]",
   "breakdown": {
-    "rent": { "origin": "[e.g. $3,200/mo]", "target": "[e.g. ₹25,000/mo]", "savings_pct": [number, negative if more expensive] },
+    "rent": { "origin": "[e.g. $3,200/mo]", "target": "[e.g. 25,000/mo]", "savings_pct": [number, negative if more expensive] },
     "groceries": { "origin": "[amount/mo]", "target": "[amount/mo]", "savings_pct": [number] },
     "transport": { "origin": "[amount/mo]", "target": "[amount/mo]", "savings_pct": [number] },
     "healthcare": { "origin": "[amount/mo]", "target": "[amount/mo]", "savings_pct": [number] }
   },
-  "caveats": ["[one important caveat about the comparison]"],
+  "caveats": ["[one important caveat]"],
   "data_source": "Numbeo / World Bank PPP 2024",
   "data_freshness": "2024-2025 estimates"
 }`;
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1500,
-        messages: [{ role: "user", content: prompt }]
-      }),
-    });
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 1500 }
+        })
+      }
+    );
 
     if (!response.ok) {
       const t = await response.text();
-      return res.status(500).json({ error: "API error " + response.status + ": " + t });
+      return res.status(500).json({ error: "Gemini API error " + response.status + ": " + t });
     }
 
     const data = await response.json();
-    const text = data.content[0].text;
+    const text = data.candidates[0].content.parts[0].text;
 
     const js = text.indexOf("{");
     const je = text.lastIndexOf("}");
