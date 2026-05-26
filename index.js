@@ -99,7 +99,6 @@ const HTML = `<!DOCTYPE html>
 </nav>
 <main>
   <section class="hero">
-    <p class="hero-eyebrow">Powered by Google Gemini AI</p>
     <h1>Your salary is not the same<br/><em>everywhere in the world</em></h1>
     <p>$100k in San Francisco buys very different things than $100k in Hyderabad. Find the real equivalent salary adjusted for purchasing power.</p>
   </section>
