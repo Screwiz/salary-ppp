@@ -95,13 +95,13 @@ const HTML = `<!DOCTYPE html>
 <body>
 <nav>
   <div class="logo">Salary<span>PPP</span></div>
-  <span class="nav-tag">Real-time · AI-powered</span>
+  <span class="nav-tag">AI-powered</span>
 </nav>
 <main>
   <section class="hero">
-    <p class="hero-eyebrow">Powered by Claude + live web search</p>
+    <p class="hero-eyebrow">Powered by Claude AI</p>
     <h1>Your salary is not the same<br/><em>everywhere in the world</em></h1>
-    <p>$100k in San Francisco buys very different things than $100k in Hyderabad. Find the real equivalent salary adjusted for purchasing power using live data.</p>
+    <p>$100k in San Francisco buys very different things than $100k in Hyderabad. Find the real equivalent salary adjusted for purchasing power.</p>
   </section>
   <div class="form-card">
     <div class="examples">
@@ -144,7 +144,7 @@ const HTML = `<!DOCTYPE html>
     </div>
     <button class="compare-btn" id="compareBtn" onclick="compare()">Compare purchasing power</button>
   </div>
-  <div class="status-bar" id="statusBar"><div class="spinner"></div><span id="statusMsg">Searching...</span></div>
+  <div class="status-bar" id="statusBar"><div class="spinner"></div><span id="statusMsg">Calculating...</span></div>
   <div class="error-box" id="errorBox"></div>
   <div id="result">
     <div class="result-header">
@@ -187,7 +187,7 @@ const HTML = `<!DOCTYPE html>
     </div>
   </div>
 </main>
-<footer>SalaryPPP · Real-time purchasing power estimates via Claude AI + web search · Not financial advice</footer>
+<footer>SalaryPPP · Purchasing power estimates via Claude AI · Not financial advice</footer>
 <script>
 function fill(sal, cur, from, to) {
   document.getElementById('salary').value = sal;
@@ -211,7 +211,7 @@ async function compare() {
 
   btn.disabled = true;
   statusBar.classList.add('visible');
-  statusMsg.textContent = 'Searching for latest cost of living data...';
+  statusMsg.textContent = 'Calculating purchasing power...';
   errorBox.classList.remove('visible');
   result.classList.remove('visible');
 
@@ -221,23 +221,9 @@ async function compare() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ salary, currency, from, to })
     });
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const payload = JSON.parse(line.slice(6));
-        if (payload.type === 'status') statusMsg.textContent = payload.message;
-        else if (payload.type === 'error') showError(payload.message);
-        else if (payload.type === 'result') renderResult(payload.data);
-      }
-    }
+    const data = await response.json();
+    if (data.error) { showError(data.error); return; }
+    renderResult(data);
   } catch (err) {
     showError('Error: ' + err.message);
   } finally {
@@ -276,8 +262,8 @@ function renderResult(r) {
   document.getElementById('r-verdict').textContent = r.verdict || '';
   const caveats = Array.isArray(r.caveats) ? r.caveats : (r.caveats ? [r.caveats] : []);
   document.getElementById('r-caveat').textContent = 'Note: ' + (caveats[0] || 'Actual purchasing power varies by lifestyle.');
-  document.getElementById('r-source').textContent = r.data_source || 'Numbeo / PPP data';
-  document.getElementById('r-freshness').textContent = r.data_freshness || 'Latest available';
+  document.getElementById('r-source').textContent = r.data_source || 'Based on Numbeo / World Bank PPP data';
+  document.getElementById('r-freshness').textContent = r.data_freshness || '2024-2025 estimates';
   document.getElementById('result').classList.add('visible');
   document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -306,90 +292,81 @@ app.post("/api/compare", async (req, res) => {
     return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
   }
 
-  const prompt = `You are a cost-of-living expert with access to web search.
-A person earns ${Number(salary).toLocaleString()} ${currency}/year in ${from}. What salary in ${to} gives equivalent purchasing power?
-Search for: cost of living comparison ${from} vs ${to} 2025 Numbeo
-Reply ONLY with raw JSON, no markdown, no backticks, no explanation:
-{"origin":{"location":"${from}","salary":${salary},"currency":"${currency}","col_index_label":"Cost of Living Index: XX"},"target":{"location":"${to}","local_currency_code":"XXX","local_currency_symbol":"X","equivalent_local":0,"equivalent_usd":0,"col_index_label":"Cost of Living Index: XX"},"ratio":1.0,"ratio_label":"Xx cheaper","verdict":"2-3 sentence explanation","breakdown":{"rent":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"groceries":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"transport":{"origin":"$X/mo","target":"X/mo","savings_pct":0},"healthcare":{"origin":"$X/mo","target":"X/mo","savings_pct":0}},"caveats":["one caveat"],"data_source":"Numbeo 2025","data_freshness":"May 2025"}`;
+  const prompt = `You are a cost-of-living and purchasing power parity expert.
 
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.write(`data: ${JSON.stringify({ type: "status", message: "Searching live cost of living data..." })}\n\n`);
+A person earns ${Number(salary).toLocaleString()} ${currency} per year in ${from}.
+Calculate what equivalent salary they would need in ${to} to maintain the same purchasing power and lifestyle.
+
+Use your knowledge of:
+- Cost of living indices (Numbeo, World Bank PPP data)
+- Typical monthly costs for rent, groceries, transport, healthcare in both cities
+- Currency exchange rates
+- Local purchasing power
+
+Return ONLY a valid JSON object, no markdown, no explanation, no backticks. Just raw JSON:
+{
+  "origin": {
+    "location": "${from}",
+    "salary": ${salary},
+    "currency": "${currency}",
+    "col_index_label": "Cost of Living Index: [number]"
+  },
+  "target": {
+    "location": "${to}",
+    "local_currency_code": "[3-letter code]",
+    "local_currency_symbol": "[symbol]",
+    "equivalent_local": [number in local currency],
+    "equivalent_usd": [number in USD],
+    "col_index_label": "Cost of Living Index: [number]"
+  },
+  "ratio": [number like 3.2],
+  "ratio_label": "[X]x cheaper/more expensive",
+  "verdict": "[2-3 sentences explaining the difference in purchasing power]",
+  "breakdown": {
+    "rent": { "origin": "[e.g. $3,200/mo]", "target": "[e.g. ₹25,000/mo]", "savings_pct": [number, negative if more expensive] },
+    "groceries": { "origin": "[amount/mo]", "target": "[amount/mo]", "savings_pct": [number] },
+    "transport": { "origin": "[amount/mo]", "target": "[amount/mo]", "savings_pct": [number] },
+    "healthcare": { "origin": "[amount/mo]", "target": "[amount/mo]", "savings_pct": [number] }
+  },
+  "caveats": ["[one important caveat about the comparison]"],
+  "data_source": "Numbeo / World Bank PPP 2024",
+  "data_freshness": "2024-2025 estimates"
+}`;
 
   try {
-    const messages = [{ role: "user", content: prompt }];
-    let finalText = "";
-    let searchCount = 0;
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1500,
+        messages: [{ role: "user", content: prompt }]
+      }),
+    });
 
-    while (true) {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-beta": "web-search-1"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          messages: messages
-        }),
-      });
-
-      if (!response.ok) {
-        const t = await response.text();
-        res.write(`data: ${JSON.stringify({ type: "error", message: "API error " + response.status + ": " + t })}\n\n`);
-        return res.end();
-      }
-
-      const data = await response.json();
-      const content = data.content || [];
-
-      // Add assistant response to message history
-      messages.push({ role: "assistant", content: content });
-
-      // Collect text blocks
-      content.filter(b => b.type === "text").forEach(b => { finalText += b.text; });
-
-      // Count tool uses
-      const toolUses = content.filter(b => b.type === "tool_use");
-      searchCount += toolUses.length;
-      if (searchCount > 0) {
-        res.write(`data: ${JSON.stringify({ type: "status", message: "Searched " + searchCount + " source(s). Calculating..." })}\n\n`);
-      }
-
-      // If done, break
-      if (data.stop_reason === "end_turn") break;
-
-      // If there are tool results to send back
-      if (toolUses.length > 0) {
-        const toolResults = toolUses.map(tu => ({
-          type: "tool_result",
-          tool_use_id: tu.id,
-          content: tu.output || ""
-        }));
-        messages.push({ role: "user", content: toolResults });
-      } else {
-        break;
-      }
+    if (!response.ok) {
+      const t = await response.text();
+      return res.status(500).json({ error: "API error " + response.status + ": " + t });
     }
 
-    const js = finalText.indexOf("{");
-    const je = finalText.lastIndexOf("}");
+    const data = await response.json();
+    const text = data.content[0].text;
+
+    const js = text.indexOf("{");
+    const je = text.lastIndexOf("}");
     if (js === -1) {
-      res.write(`data: ${JSON.stringify({ type: "error", message: "No JSON in response: " + finalText.slice(0, 300) })}\n\n`);
-      return res.end();
+      return res.status(500).json({ error: "Could not parse response: " + text.slice(0, 200) });
     }
 
-    const result = JSON.parse(finalText.slice(js, je + 1));
-    res.write(`data: ${JSON.stringify({ type: "result", data: result })}\n\n`);
-    res.end();
+    const result = JSON.parse(text.slice(js, je + 1));
+    return res.json(result);
+
   } catch (err) {
-    res.write(`data: ${JSON.stringify({ type: "error", message: err.message })}\n\n`);
-    res.end();
+    return res.status(500).json({ error: err.message });
   }
 });
 
