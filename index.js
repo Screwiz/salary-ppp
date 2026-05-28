@@ -1069,13 +1069,13 @@ Return ONLY raw JSON, no markdown, no explanation:
 
   try {
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_API_KEY,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-pro:generateContent?key=" + GEMINI_API_KEY,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 2000, responseMimeType: "application/json" }
+          generationConfig: { temperature: 0.3, maxOutputTokens: 5000, responseMimeType: "application/json" }
         })
       }
     );
