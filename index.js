@@ -837,7 +837,7 @@ Return ONLY raw JSON, no markdown, no explanation:
     const resp = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key="+KEY,
       {method:"POST",headers:{"Content-Type":"application/json"},
-       body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.3,maxOutputTokens:5000,responseMimeType:"application/json"}})}
+       body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.3,maxOutputTokens:2000,responseMimeType:"application/json"}})}
     );
     if(!resp.ok){const t=await resp.text();return res.status(500).json({error:"Gemini error "+resp.status+": "+t});}
     const data = await resp.json();
