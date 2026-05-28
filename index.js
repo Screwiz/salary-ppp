@@ -838,36 +838,85 @@ IMPORTANT: Respond with ONLY a valid JSON object. No markdown, no code fences, n
 Required JSON shape:
 {
   "origin": { "location": string, "salary": number, "currency": string, "col_index_label": string },
-  "target": { "location": string, "local_currency_code": string, "local_currency_symbol": string, "equivalent_loca
-  const {salary,currency,from,to} = req.body;
-  if(!salary||!currency||!from||!to) return res.status(400).json({error:"Missing fields"});
-  const KEY = process.env.GEMINI_API_KEY;
-  if(!KEY) return res.status(500).json({error:"GEMINI_API_KEY not set"});
+  "target": { "location": string, "local_currency_code": string, "local_currency_symbol": string, "equivalent_local": number, "equivalent_usd": number, "col_index_label": string },
+  "ratio": number,
+  "ratio_label": string,
+  "verdict": string,
+  "breakdown": {
+    "rent":       { "origin": string, "target": string, "savings_pct": number },
+    "groceries":  { "origin": string, "target": string, "savings_pct": number },
+    "transport":  { "origin": string, "target": string, "savings_pct": number },
+    "healthcare": { "origin": string, "target": string, "savings_pct": number }
+  },
+  "caveats": [string],
+  "data_source": string,
+  "data_freshness": string
+}`;
 
-  const prompt = `You are a cost-of-living and purchasing power parity expert.
-A person earns ${Number(salary).toLocaleString()} ${currency} per year in ${from}.
-Calculate what equivalent salary they need in ${to} for the same purchasing power.
-Use Numbeo, World Bank PPP data, and current exchange rates.
-Return ONLY raw JSON, no markdown, no explanation:
-{"origin":{"location":"${from}","salary":${salary},"currency":"${currency}","col_index_label":"Cost of Living Index: [number]"},"target":{"location":"${to}","local_currency_code":"[3-letter]","local_currency_symbol":"[symbol]","equivalent_local":[number],"equivalent_usd":[number],"col_index_label":"Cost of Living Index: [number]"},"ratio":[number],"ratio_label":"[X]x cheaper/more expensive","verdict":"[2-3 sentences]","breakdown":{"rent":{"origin":"[e.g. $3,200/mo]","target":"[amount/mo]","savings_pct":[number negative if more expensive]},"groceries":{"origin":"[amount/mo]","target":"[amount/mo]","savings_pct":[number]},"transport":{"origin":"[amount/mo]","target":"[amount/mo]","savings_pct":[number]},"healthcare":{"origin":"[amount/mo]","target":"[amount/mo]","savings_pct":[number]}},"caveats":["[one important caveat]"],"data_source":"Numbeo / World Bank PPP 2024","data_freshness":"2024-2025 estimates"}`;
-
-  try {
+  const callGemini = async () => {
     const resp = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key="+KEY,
-      {method:"POST",headers:{"Content-Type":"application/json"},
-       body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.3,maxOutputTokens:2000,responseMimeType:"application/json"}})}
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + KEY,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2000,
+            responseMimeType: "application/json"
+          }
+        })
+      }
     );
-    if(!resp.ok){const t=await resp.text();return res.status(500).json({error:"Gemini error "+resp.status+": "+t});}
-    const data = await resp.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if(!text) return res.status(500).json({error:"Empty response",raw:data});
-    let c = text.trim().replace(/```json/g,"").replace(/```/g,"");
-    const s=c.indexOf("{"),e=c.lastIndexOf("}");
-    if(s===-1||e===-1) return res.status(500).json({error:"No JSON found",raw:c});
-    c=c.slice(s,e+1);
-    try{return res.json(JSON.parse(c));}
-    catch(err){return res.status(500).json({error:"JSON parse failed",details:err.message,raw:c});}
-  } catch(err){return res.status(500).json({error:err.message});}
+    if (!resp.ok) {
+      const t = await resp.text();
+      throw new Error("Gemini HTTP " + resp.status + ": " + t);
+    }
+    return resp.json();
+  };
+
+  const extractJSON = (text) => {
+    if (!text) throw new Error("Empty response from Gemini");
+
+    let clean = text.trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    try { return JSON.parse(clean); } catch (_) {}
+
+    const start = clean.indexOf("{");
+    const end = clean.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start)
+      throw new Error("No JSON object found in response");
+
+    const slice = clean.slice(start, end + 1);
+    try { return JSON.parse(slice); } catch (e) {
+      const fixed = slice
+        .replace(/,\s*([}\]])/g, "$1")
+        .replace(/([{,]\s*)(\w+)\s*:/g, (m, p, k) => `${p}"${k}":`)
+      try { return JSON.parse(fixed); } catch (e2) {
+        throw new Error("JSON parse failed: " + e2.message + " | Raw: " + slice.slice(0, 300));
+      }
+    }
+  };
+
+  let lastError;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const data = await callGemini();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const parsed = extractJSON(text);
+      return res.json(parsed);
+    } catch (err) {
+      lastError = err;
+      if (attempt < 2) await new Promise(r => setTimeout(r, 800));
+    }
+  }
+
+  return res.status(500).json({ error: lastError.message });
 });
 
 app.listen(PORT, ()=>console.log("SalaryPPP on port "+PORT));
