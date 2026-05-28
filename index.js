@@ -95,7 +95,6 @@ const HTML = `<!DOCTYPE html>
 <body>
 <nav>
   <div class="logo">Salary<span>PPP</span></div>
-  <span class="nav-tag">AI-powered</span>
 </nav>
 <main>
   <section class="hero">
