@@ -820,7 +820,25 @@ app.get("/how-it-works", (req,res) => res.send(wrap("How It Works","how",HOW_BOD
 // ══════════════════════════════════════════════
 // API
 // ══════════════════════════════════════════════
-app.post("/api/compare", async (req,res) => {
+app.post("/api/compare", async (req, res) => {
+  const { salary, currency, from, to } = req.body;
+  if (!salary || !currency || !from || !to)
+    return res.status(400).json({ error: "Missing fields" });
+
+  const KEY = process.env.GEMINI_API_KEY;
+  if (!KEY) return res.status(500).json({ error: "GEMINI_API_KEY not set" });
+
+  const prompt = `You are a cost-of-living and purchasing power parity expert.
+A person earns ${Number(salary).toLocaleString()} ${currency} per year in ${from}.
+Calculate what equivalent salary they need in ${to} for the same purchasing power.
+Use Numbeo, World Bank PPP data, and current exchange rates.
+
+IMPORTANT: Respond with ONLY a valid JSON object. No markdown, no code fences, no explanation before or after. Start your response with { and end with }.
+
+Required JSON shape:
+{
+  "origin": { "location": string, "salary": number, "currency": string, "col_index_label": string },
+  "target": { "location": string, "local_currency_code": string, "local_currency_symbol": string, "equivalent_loca
   const {salary,currency,from,to} = req.body;
   if(!salary||!currency||!from||!to) return res.status(400).json({error:"Missing fields"});
   const KEY = process.env.GEMINI_API_KEY;
