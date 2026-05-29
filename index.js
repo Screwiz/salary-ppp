@@ -862,8 +862,8 @@ Required JSON shape:
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 2000,
+            temperature: 0.3,
+            maxOutputTokens: 3000,
             responseMimeType: "application/json"
           }
         })
