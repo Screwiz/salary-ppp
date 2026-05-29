@@ -855,7 +855,7 @@ Required JSON shape:
 
   const callGemini = async () => {
     const resp = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + KEY,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash:generateContent?key=" + KEY,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
