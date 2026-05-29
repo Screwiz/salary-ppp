@@ -855,15 +855,15 @@ Required JSON shape:
 
   const callGemini = async () => {
     const resp = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash:generateContent?key=" + KEY,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + KEY,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 3000,
+            temperature: 0.2,
+            maxOutputTokens: 2000,
             responseMimeType: "application/json"
           }
         })
