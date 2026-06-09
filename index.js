@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/server.js << 'EOF'
 import express from "express";
 import fetch from "node-fetch";
 
@@ -562,15 +561,15 @@ app.get("/routes", (req,res) => res.send(wrap("Popular Routes","routes",ROUTES_B
 app.get("/how-it-works", (req,res) => res.send(wrap("How It Works","how",HOW_BODY,HOW_CSS)));
 
 // ══════════════════════════════════════════════
-// API — your original Gemini code, unchanged
+// API — Groq
 // ══════════════════════════════════════════════
 app.post("/api/compare", async (req, res) => {
   const { salary, currency, from, to } = req.body;
   if (!salary || !currency || !from || !to)
     return res.status(400).json({ error: "Missing fields" });
 
-  const KEY = process.env.GEMINI_API_KEY;
-  if (!KEY) return res.status(500).json({ error: "GEMINI_API_KEY not set" });
+  const KEY = process.env.GROQ_API_KEY;
+  if (!KEY) return res.status(500).json({ error: "GROQ_API_KEY not set" });
 
   const prompt = `You are a cost-of-living and purchasing power parity expert.
 A person earns ${Number(salary).toLocaleString()} ${currency} per year in ${from}.
@@ -597,31 +596,8 @@ Required JSON shape:
   "data_freshness": string
 }`;
 
-  const callGemini = async () => {
-    const resp = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + KEY,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 2000,
-            responseMimeType: "application/json"
-          }
-        })
-      }
-    );
-    if (!resp.ok) {
-      const t = await resp.text();
-      throw new Error("Gemini HTTP " + resp.status + ": " + t);
-    }
-    return resp.json();
-  };
-
   const extractJSON = (text) => {
-    if (!text) throw new Error("Empty response from Gemini");
+    if (!text) throw new Error("Empty response from Groq");
     let clean = text.trim()
       .replace(/^```json\s*/i, "")
       .replace(/^```\s*/i, "")
@@ -646,8 +622,30 @@ Required JSON shape:
   let lastError;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const data = await callGemini();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + KEY
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          temperature: 0.2,
+          max_tokens: 2000,
+          messages: [
+            { role: "system", content: "You are a cost-of-living and purchasing power parity expert. Always respond with valid JSON only." },
+            { role: "user", content: prompt }
+          ]
+        })
+      });
+
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error("Groq HTTP " + resp.status + ": " + t);
+      }
+
+      const data = await resp.json();
+      const text = data?.choices?.[0]?.message?.content;
       const parsed = extractJSON(text);
       return res.json(parsed);
     } catch (err) {
@@ -660,5 +658,3 @@ Required JSON shape:
 });
 
 app.listen(PORT, ()=>console.log("SalaryPPP on port "+PORT));
-EOF
-echo "Done"
